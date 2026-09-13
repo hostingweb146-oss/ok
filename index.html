@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JARVIS MARK-85 // ULTRA NEURAL HUD</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Orbitron & Share Tech Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  
+  <!-- MediaPipe Hands & Camera Utils CDNs -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    body {
+      font-family: 'Share Tech Mono', monospace;
+      background-color: #020617;
+      color: #00f2fe;
+      -webkit-user-select: none;
+      user-select: none;
+      overflow-x: hidden;
+    }
+    .reverse-spin {
+      animation-direction: reverse;
+      animation-duration: 3s;
+    }
+    .hud-title {
+      font-family: 'Orbitron', sans-serif;
+    }
+    /* CRT Scanline Effect Overlay */
+    .scanlines {
+      background: linear-gradient(
+        to bottom,
+        rgba(255,255,255,0),
+        rgba(255,255,255,0) 50%,
+        rgba(0, 242, 254, 0.05) 50%,
+        rgba(0, 242, 254, 0.05)
+      );
+      background-size: 100% 4px;
+      pointer-events: none;
+    }
+    /* Glowing accents */
+    .neon-border {
+      border: 1px solid rgba(0, 242, 254, 0.35);
+      box-shadow: 0 0 15px rgba(0, 242, 254, 0.15), inset 0 0 15px rgba(0, 242, 254, 0.08);
+    }
+    .neon-gold-border {
+      border: 1px solid rgba(255, 215, 0, 0.4);
+      box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
+    }
+    .hud-button {
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .hud-button:hover {
+      background: rgba(0, 242, 254, 0.2);
+      box-shadow: 0 0 15px rgba(0, 242, 254, 0.6);
+      transform: translateY(-1px);
+    }
+    .hud-button:active {
+      transform: translateY(1px);
+    }
+    @keyframes recPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.25; transform: scale(0.85); }
+    }
+    .rec-dot {
+      animation: recPulse 1.2s infinite ease-in-out;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 20px rgba(0, 242, 254, 0.4); }
+      50% { box-shadow: 0 0 35px rgba(0, 242, 254, 0.8); }
+    }
+    .arc-glow {
+      animation: pulseGlow 1.5s infinite;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-slate-950 text-cyan-400 flex flex-col items-center justify-between p-2 sm:p-4 selection:bg-cyan-500 selection:text-black">
+
+  <!-- Top Main HUD Header Bar -->
+  <header class="w-full max-w-7xl flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-slate-900/80 backdrop-blur-md rounded-xl neon-border z-20">
+    <div class="flex items-center gap-3">
+      <!-- Blinking REC Indicator -->
+      <div class="flex items-center gap-2 bg-red-950/50 px-3 py-1 rounded-md border border-red-500/40">
+        <span class="w-3 h-3 rounded-full bg-red-500 rec-dot shadow-[0_0_10px_#ef4444]"></span>
+        <span class="text-red-400 font-bold tracking-widest text-xs hud-title">ONLINE</span>
+      </div>
+
+      <!-- App Title -->
+      <div>
+        <h1 class="hud-title text-sm sm:text-base font-black tracking-wider text-white flex items-center gap-1.5">
+          J.A.R.V.I.S. <span class="text-cyan-400">MARK-85</span> 
+          <span class="text-[10px] text-amber-400 border border-amber-400/40 px-1.5 py-0.5 rounded bg-amber-950/30">ULTRA-AI</span>
+        </h1>
+        <p class="text-[10px] text-cyan-400/70 tracking-widest hidden sm:block">NEURAL QUANTUM GESTURE ENGINE</p>
+      </div>
+    </div>
+
+    <!-- Center Status Badges & Telemetry -->
+    <div class="flex items-center gap-2 text-xs flex-wrap">
+      <span class="bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 px-2.5 py-1 rounded tracking-wider">
+        SYS: <span id="hud-mode-badge" class="text-emerald-400 font-bold">STANDBY</span>
+      </span>
+      <span class="bg-black/60 border border-cyan-500/30 px-2.5 py-1 rounded text-cyan-300">
+        FPS: <span id="fps-counter" class="text-emerald-400 font-bold">0</span>
+      </span>
+      <span class="bg-black/60 border border-cyan-500/30 px-2.5 py-1 rounded text-cyan-300">
+        HANDS: <span id="hands-count" class="text-amber-400 font-bold">0</span>
+      </span>
+      <span class="bg-black/60 border border-cyan-500/30 px-2.5 py-1 rounded text-cyan-300 hidden md:inline">
+        TEMP: <span id="core-temp" class="text-amber-300 font-bold">38.4°C</span>
+      </span>
+    </div>
+
+    <!-- Clock and System Date -->
+    <div class="text-right flex flex-col items-end">
+      <div id="live-clock" class="text-xs sm:text-sm font-bold tracking-widest text-cyan-200">00.00.0000 00:00:00</div>
+      <div class="text-[10px] text-cyan-400/60 tracking-wider">NEURAL LATENCY: <span id="latency-val" class="text-emerald-400">3.2ms</span></div>
+    </div>
+  </header>
+
+  <main class="relative w-full max-w-7xl my-3 flex-1 flex flex-col items-center justify-center">
+    <!-- Viewport Container with Cyber HUD Corners -->
+    <div class="relative w-full aspect-[4/3] sm:aspect-[16/9] max-h-[76vh] bg-black/90 rounded-2xl overflow-hidden neon-border shadow-2xl flex items-center justify-center">
+      
+      <!-- Video Element for Media Stream -->
+      <video id="webcam-video" webkit-playsinline muted class="hidden"></video>
+
+      <!-- Main High-Tech Canvas -->
+      <canvas id="tracking-canvas" class="w-full h-full object-contain block"></canvas>
+
+      <!-- Scanlines FX overlay -->
+      <div class="absolute inset-0 scanlines pointer-events-none z-10"></div>
+
+      <!-- Cyber Corner Tech Decals -->
+      <div class="absolute top-3 left-3 w-8 h-8 border-t-2 border-l-2 border-cyan-400 pointer-events-none z-10"></div>
+      <div class="absolute top-3 right-3 w-8 h-8 border-t-2 border-r-2 border-cyan-400 pointer-events-none z-10"></div>
+      <div class="absolute bottom-3 left-3 w-8 h-8 border-b-2 border-l-2 border-cyan-400 pointer-events-none z-10"></div>
+      <div class="absolute bottom-3 right-3 w-8 h-8 border-b-2 border-r-2 border-cyan-400 pointer-events-none z-10"></div>
+
+      <!-- Top Overlay Command HUD Guide Badge -->
+      <div class="absolute top-4 left-4 bg-black/70 backdrop-blur-md border border-cyan-500/30 p-2.5 rounded-lg text-[11px] pointer-events-none z-10 hidden sm:block">
+        <div class="text-white font-bold mb-1 flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-cyan-400"></span> GESTURE PROTOCOLS:
+        </div>
+        <div class="text-cyan-300/90 leading-relaxed">
+          <div>🤏 <b class="text-white">Pinch (Thumb+Index):</b> Neon Air-Draw Ribbon</div>
+          <div>🖐️ <b class="text-white">Open Palm:</b> Arc Repulsor Cannon</div>
+          <div>✊ <b class="text-white">Fist:</b> Sonic EMP Screen Wipe</div>
+          <div>👆👆 <b class="text-white">Dual Index:</b> Tactical Scanner Bracket</div>
+        </div>
+      </div>
+
+      <!-- Live Gesture Toast Notification -->
+      <div id="hud-toast" class="absolute top-4 right-4 bg-cyan-950/80 border border-cyan-400 text-cyan-200 font-bold text-xs px-3.5 py-1.5 rounded-md backdrop-blur-md opacity-0 transition-opacity duration-300 z-20 pointer-events-none">
+        GESTURE DETECTED
+      </div>
+
+      <!-- Camera Loading / Splash Screen -->
+      <div id="loading-overlay" class="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center gap-4 z-30 p-6 text-center">
+        <div class="relative w-24 h-24 flex items-center justify-center">
+          <div class="absolute inset-0 border-4 border-cyan-500/20 border-t-cyan-400 rounded-full animate-spin"></div>
+          <div class="absolute inset-2 border-2 border-amber-500/20 border-b-amber-400 rounded-full animate-spin reverse-spin"></div>
+          <svg class="w-10 h-10 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+          </svg>
+        </div>
+        <div class="max-w-md">
+          <h2 class="hud-title text-xl font-bold text-white mb-1 tracking-wider">JARVIS // NEURAL LINK READY</h2>
+          <p id="loading-status-text" class="text-xs text-cyan-300/80 mb-5 leading-relaxed">
+            Direct WebGL neural acceleration ready. Click below to initialize optical tracking without any terminal or Python packages required.
+          </p>
+          <button id="btn-request-cam" class="hud-button px-7 py-3 bg-cyan-500/20 text-cyan-300 border border-cyan-400 rounded-xl text-sm tracking-wider font-bold hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(0,242,254,0.3)]">
+            ENGAGE OPTICAL FEED
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="w-full max-w-7xl bg-slate-900/85 backdrop-blur-md rounded-xl neon-border p-3 flex flex-wrap items-center justify-between gap-3 z-20">
+    <!-- Camera Power & Mirroring -->
+    <div class="flex items-center gap-2 flex-wrap">
+      <button id="btn-toggle-cam" class="hud-button px-3 py-1.5 rounded-lg border border-cyan-500/40 text-xs font-bold text-cyan-300 bg-cyan-950/40 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+        <span id="label-toggle-cam">STOP CAMERA</span>
+      </button>
+
+      <button id="btn-toggle-mirror" class="hud-button px-3 py-1.5 rounded-lg border border-cyan-500/40 text-xs font-bold text-cyan-300 bg-cyan-950/40">
+        MIRROR: <span id="mirror-status" class="text-emerald-400">ON</span>
+      </button>
+
+      <button id="btn-clear-canvas" class="hud-button px-3 py-1.5 rounded-lg border border-red-500/40 text-xs font-bold text-red-300 bg-red-950/40 hover:border-red-400">
+        PURGE DRAWINGS (FIST)
+      </button>
+    </div>
+
+    <!-- Holographic Air-Draw Color Palettes -->
+    <div class="flex items-center gap-1.5 bg-black/60 px-2.5 py-1 rounded-lg border border-cyan-500/30">
+      <span class="text-[11px] text-cyan-400/80 mr-1">NEON:</span>
+      <button type="button" aria-label="Use cyan neon color" title="Use cyan neon color" class="color-swatch w-5 h-5 rounded-full border border-white/50 bg-[#00f2fe] scale-110" data-color="#00f2fe"></button>
+      <button type="button" aria-label="Use pink neon color" title="Use pink neon color" class="color-swatch w-5 h-5 rounded-full border border-transparent bg-[#ff0077]" data-color="#ff0077"></button>
+      <button type="button" aria-label="Use green neon color" title="Use green neon color" class="color-swatch w-5 h-5 rounded-full border border-transparent bg-[#00ff88]" data-color="#00ff88"></button>
+      <button type="button" aria-label="Use gold neon color" title="Use gold neon color" class="color-swatch w-5 h-5 rounded-full border border-transparent bg-[#ffd700]" data-color="#ffd700"></button>
+    </div>
+
+    <!-- HUD Overlay Toggles -->
+    <div class="flex items-center gap-2 flex-wrap">
+      <button id="btn-toggle-hud" class="hud-button px-3 py-1.5 rounded-lg border border-cyan-500/40 text-xs font-bold text-cyan-300 bg-cyan-950/40">
+        AR HUD: <span id="hud-status" class="text-emerald-400">ON</span>
+      </button>
+
+      <button id="btn-toggle-audio" class="hud-button px-3 py-1.5 rounded-lg border border-cyan-500/40 text-xs font-bold text-cyan-300 bg-cyan-950/40 flex items-center gap-1">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M6 10H4a1 1 0 00-1 1v2a1 1 0 001 1h2l4 4V6L6 10z"></path>
+        </svg>
+        <span>AUDIO FX: <span id="audio-status" class="text-emerald-400">ON</span></span>
+      </button>
+
+      <button id="btn-snapshot" class="hud-button px-3.5 py-1.5 rounded-lg border border-amber-500/40 text-xs font-bold text-amber-300 bg-amber-950/40 flex items-center gap-1.5 hover:border-amber-400">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+        </svg>
+        <span>CAPTURE</span>
+      </button>
+    </div>
+  </footer>
+
+  <script>
+    // State Management
+    const state = {
+      isCameraRunning: false,
+      isMirrored: true,
+      showHud: true,
+      audioEnabled: true,
+      fps: 0,
+      frameCount: 0,
+      lastFpsUpdate: performance.now(),
+      reticleRotation: 0,
+      activeColor: '#00f2fe',
+      lastSoundTimes: {
+        lock: 0,
+        repulsor: 0,
+        emp: 0
+      }
+    };
+
+    // Air Drawing & Particle Systems
+    const drawStrokes = [];
+    let currentStroke = [];
+    const particles = [];
+    const empWaves = [];
+
+    // Synthesized Procedural Audio Engine
+    let audioCtx = null;
+
+    function getAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    function playSound(type) {
+      if (!state.audioEnabled) return;
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+      const wallNow = Date.now();
+
+      if (type === 'lock') {
+        if (wallNow - state.lastSoundTimes.lock < 350) return;
+        state.lastSoundTimes.lock = wallNow;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, now);
+        osc.frequency.exponentialRampToValueAtTime(1600, now + 0.08);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else if (type === 'repulsor') {
+        if (wallNow - state.lastSoundTimes.repulsor < 800) return;
+        state.lastSoundTimes.repulsor = wallNow;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(140, now);
+        osc.frequency.exponentialRampToValueAtTime(520, now + 0.35);
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.08, now + 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.4);
+      } else if (type === 'emp') {
+        if (wallNow - state.lastSoundTimes.emp < 1200) return;
+        state.lastSoundTimes.emp = wallNow;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.6);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.6);
+      }
+    }
+
+    const videoElement = document.getElementById('webcam-video');
+    const canvasElement = document.getElementById('tracking-canvas');
+    const ctx = canvasElement.getContext('2d');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingStatusText = document.getElementById('loading-status-text');
+    const btnRequestCam = document.getElementById('btn-request-cam');
+    const btnToggleCam = document.getElementById('btn-toggle-cam');
+    const labelToggleCam = document.getElementById('label-toggle-cam');
+    const btnToggleMirror = document.getElementById('btn-toggle-mirror');
+    const mirrorStatus = document.getElementById('mirror-status');
+    const btnToggleHud = document.getElementById('btn-toggle-hud');
+    const hudStatus = document.getElementById('hud-status');
+    const btnToggleAudio = document.getElementById('btn-toggle-audio');
+    const audioStatus = document.getElementById('audio-status');
+    const btnSnapshot = document.getElementById('btn-snapshot');
+    const btnClearCanvas = document.getElementById('btn-clear-canvas');
+    const fpsCounter = document.getElementById('fps-counter');
+    const handsCountEl = document.getElementById('hands-count');
+    const hudModeBadge = document.getElementById('hud-mode-badge');
+    const liveClock = document.getElementById('live-clock');
+    const hudToast = document.getElementById('hud-toast');
+    const coreTemp = document.getElementById('core-temp');
+    const latencyVal = document.getElementById('latency-val');
+    const swatches = document.querySelectorAll('.color-swatch');
+
+    let cameraInstance = null;
+    let handsModel = null;
+
+    swatches.forEach(swatch => {
+      swatch.addEventListener('click', () => {
+        swatches.forEach(s => s.classList.remove('scale-110', 'border-white/50'));
+        swatch.classList.add('scale-110', 'border-white/50');
+        state.activeColor = swatch.getAttribute('data-color');
+        showToast(`NEON COLOR: ${state.activeColor}`);
+      });
+    });
+
+    function showToast(msg) {
+      hudToast.textContent = msg;
+      hudToast.style.opacity = '1';
+      clearTimeout(hudToast._timer);
+      hudToast._timer = setTimeout(() => {
+        hudToast.style.opacity = '0';
+      }, 1400);
+    }
+
+    function updateClock() {
+      const now = new Date();
+      const d = String(now.getDate()).padStart(2, '0');
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const y = now.getFullYear();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      liveClock.textContent = `${d}.${m}.${y} ${hh}:${mm}:${ss}`;
+      coreTemp.textContent = (37.2 + Math.sin(Date.now() / 4000) * 1.5).toFixed(1) + '°C';
+      latencyVal.textContent = (3.0 + Math.random() * 0.8).toFixed(1) + 'ms';
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    const HAND_CONNECTIONS = [
+      [0, 1], [1, 2], [2, 3], [3, 4],       // Thumb
+      [0, 5], [5, 6], [6, 7], [7, 8],       // Index
+      [5, 9], [9, 10], [10, 11], [11, 12],  // Middle
+      [9, 13], [13, 14], [14, 15], [15, 16],// Ring
+      [13, 17], [17, 18], [18, 19], [19, 20],// Pinky
+      [0, 17]                               // Palm Base
+    ];
+
+    function initMediaPipe() {
+      handsModel = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      handsModel.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.65,
+        minTrackingConfidence: 0.65
+      });
+
+      handsModel.onResults(onHandTrackingResults);
+    }
+
+    // Geometry Helpers
+    function getDistance(p1, p2, w, h) {
+      const dx = (p1.x - p2.x) * w;
+      const dy = (p1.y - p2.y) * h;
+      return Math.hypot(dx, dy);
+    }
+
+    function addParticles(x, y, color, count = 2) {
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: x,
+          y: y,
+          vx: (Math.random() - 0.5) * 4,
+          vy: (Math.random() - 0.5) * 4,
+          life: 1.0,
+          color: color
+        });
+      }
+    }
+
+    // High-Tech Corner Framing Brackets
+    function drawCornerBracket(ctx, x1, y1, x2, y2, color = '#ffd700', length = 28, lw = 2.5) {
+      const minX = Math.min(x1, x2);
+      const maxX = Math.max(x1, x2);
+      const minY = Math.min(y1, y2);
+      const maxY = Math.max(y1, y2);
+      const w = maxX - minX;
+      const h = maxY - minY;
+      if (w < 20 || h < 20) return;
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lw;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10;
+
+      // Brackets
+      ctx.beginPath();
+      ctx.moveTo(minX, minY + length); ctx.lineTo(minX, minY); ctx.lineTo(minX + length, minY);
+      ctx.moveTo(maxX - length, minY); ctx.lineTo(maxX, minY); ctx.lineTo(maxX, minY + length);
+      ctx.moveTo(minX, maxY - length); ctx.lineTo(minX, maxY); ctx.lineTo(minX + length, maxY);
+      ctx.moveTo(maxX - length, maxY); ctx.lineTo(maxX, maxY); ctx.lineTo(maxX, maxY - length);
+      ctx.stroke();
+
+      // Info Tag
+      ctx.fillStyle = color;
+      ctx.font = '12px "Share Tech Mono", monospace';
+      ctx.fillText(`TARGET_LOCK // [${Math.round(w)} x ${Math.round(h)}]`, minX + 8, minY - 8);
+      ctx.fillText(`RANGE: ${(Math.hypot(w, h) * 0.18).toFixed(1)}cm`, minX + 8, maxY + 18);
+
+      // Shaded internal scan
+      ctx.fillStyle = 'rgba(255, 215, 0, 0.05)';
+      ctx.fillRect(minX, minY, w, h);
+      ctx.restore();
+    }
+
+    // Rotating Gyro Reticle on Fingertip
+    function drawGyroReticle(ctx, cx, cy, label = "TRACK_POINT", color = '#00f2fe') {
+      state.reticleRotation += 0.018;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      // Outer circle
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.8;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(0, 0, 24, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Rotating dashed arc
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 32, state.reticleRotation, state.reticleRotation + Math.PI * 0.5);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, 32, state.reticleRotation + Math.PI, state.reticleRotation + Math.PI * 1.5);
+      ctx.stroke();
+
+      // Center laser dot
+      ctx.fillStyle = '#ff0055';
+      ctx.beginPath();
+      ctx.arc(0, 0, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Coordinate Tag
+      ctx.fillStyle = color;
+      ctx.font = '11px "Share Tech Mono", monospace';
+      ctx.fillText(`${label} [${Math.round(cx)}, ${Math.round(cy)}]`, 38, -6);
+
+      ctx.restore();
+    }
+
+    // Arc Reactor / Repulsor Charging Effect
+    function drawArcReactor(ctx, cx, cy) {
+      playSound('repulsor');
+      const pulse = (Math.sin(Date.now() / 120) + 1) * 0.5;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      // Glowing Aura
+      const radGrad = ctx.createRadialGradient(0, 0, 10, 0, 0, 70 + pulse * 15);
+      radGrad.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+      radGrad.addColorStop(0.3, 'rgba(0, 242, 254, 0.8)');
+      radGrad.addColorStop(0.7, 'rgba(0, 150, 255, 0.3)');
+      radGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+      ctx.fillStyle = radGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, 70 + pulse * 15, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Reactor Core Rings
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#00f2fe';
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.arc(0, 0, 28, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Segments
+      for (let i = 0; i < 6; i++) {
+        const ang = (i * Math.PI / 3) + state.reticleRotation * 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(ang) * 16, Math.sin(ang) * 16);
+        ctx.lineTo(Math.cos(ang) * 28, Math.sin(ang) * 28);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = '#00f2fe';
+      ctx.font = 'bold 12px "Orbitron", sans-serif';
+      ctx.fillText('REPULSOR CHARGED: 100%', -65, -45);
+      ctx.restore();
+
+      addParticles(cx, cy, '#00f2fe', 3);
+    }
+
+    // Trigger EMP Shockwave Blast
+    function triggerEmpShockwave(cx, cy) {
+      playSound('emp');
+      empWaves.push({
+        x: cx,
+        y: cy,
+        radius: 10,
+        maxRadius: 360,
+        alpha: 1.0
+      });
+      // Purge current drawings
+      drawStrokes.length = 0;
+      currentStroke = [];
+      showToast('EMP SHOCKWAVE // DRAWINGS PURGED');
+    }
+
+    function onHandTrackingResults(results) {
+      state.frameCount++;
+      const now = performance.now();
+      const delta = now - state.lastFpsUpdate;
+      if (delta >= 1000) {
+        state.fps = Math.round((state.frameCount * 1000) / delta);
+        fpsCounter.textContent = state.fps;
+        state.frameCount = 0;
+        state.lastFpsUpdate = now;
+      }
+
+      const width = canvasElement.width = results.image.width;
+      const height = canvasElement.height = results.image.height;
+
+      ctx.save();
+      ctx.clearRect(0, 0, width, height);
+
+      // Mirror mode
+      if (state.isMirrored) {
+        ctx.translate(width, 0);
+        ctx.scale(-1, 1);
+      }
+
+      // Draw Video Feed
+      ctx.drawImage(results.image, 0, 0, width, height);
+
+      // Sci-Fi Scanlines & Dimming Overlay
+      if (state.showHud) {
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.4)';
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      const handsDetected = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+      handsCountEl.textContent = handsDetected;
+      hudModeBadge.textContent = handsDetected === 2 ? 'DUAL_LOCK' : (handsDetected === 1 ? 'TRACKING' : 'IDLE');
+
+      const indexFingertips = [];
+      let isDrawingActive = false;
+
+      if (handsDetected > 0) {
+        for (let hIdx = 0; hIdx < handsDetected; hIdx++) {
+          const landmarks = results.multiHandLandmarks[hIdx];
+
+          // Key Landmarks
+          const wrist = landmarks[0];
+          const thumbTip = landmarks[4];
+          const indexTip = landmarks[8];
+          const middleTip = landmarks[12];
+          const ringTip = landmarks[16];
+          const pinkyTip = landmarks[20];
+          const palmCenter = landmarks[9];
+
+          const pIndex = { x: indexTip.x * width, y: indexTip.y * height };
+          const pThumb = { x: thumbTip.x * width, y: thumbTip.y * height };
+          const pPalm = { x: palmCenter.x * width, y: palmCenter.y * height };
+
+          indexFingertips.push(pIndex);
+
+          // 1. Draw Skeleton Lines
+          if (state.showHud) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0, 242, 254, 0.45)';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#00f2fe';
+            ctx.shadowBlur = 6;
+
+            for (const [startIdx, endIdx] of HAND_CONNECTIONS) {
+              const p1 = landmarks[startIdx];
+              const p2 = landmarks[endIdx];
+              ctx.beginPath();
+              ctx.moveTo(p1.x * width, p1.y * height);
+              ctx.lineTo(p2.x * width, p2.y * height);
+              ctx.stroke();
+            }
+
+            // Joint Nodes
+            for (let j = 0; j < landmarks.length; j++) {
+              const lm = landmarks[j];
+              ctx.fillStyle = (j === 8 || j === 4) ? '#ffd700' : '#00f2fe';
+              ctx.beginPath();
+              ctx.arc(lm.x * width, lm.y * height, (j === 8 || j === 4) ? 4.5 : 2.5, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+
+          // Distances for Gesture Detection
+          const pinchDist = getDistance(thumbTip, indexTip, width, height);
+          const indexExtended = indexTip.y < landmarks[6].y;
+          const middleExtended = middleTip.y < landmarks[10].y;
+          const ringExtended = ringTip.y < landmarks[14].y;
+          const pinkyExtended = pinkyTip.y < landmarks[18].y;
+
+          // Gesture A: FIST DETECTED (All fingers curled towards palm)
+          const isFist = !indexExtended && !middleExtended && !ringExtended && !pinkyExtended && (getDistance(indexTip, wrist, width, height) < 95);
+          if (isFist) {
+            triggerEmpShockwave(pPalm.x, pPalm.y);
+            continue;
+          }
+
+          // Gesture B: OPEN PALM (Iron Man Repulsor)
+          const isOpenPalm = indexExtended && middleExtended && ringExtended && pinkyExtended;
+          if (isOpenPalm) {
+            drawArcReactor(ctx, pPalm.x, pPalm.y);
+          }
+
+          // Gesture C: PINCH (Air-Draw Laser Ribbon)
+          if (pinchDist < 42) {
+            isDrawingActive = true;
+            currentStroke.push({ x: pIndex.x, y: pIndex.y, color: state.activeColor });
+            addParticles(pIndex.x, pIndex.y, state.activeColor, 2);
+            playSound('lock');
+
+            // Draw Pulsing Pinch Node
+            ctx.save();
+            ctx.strokeStyle = state.activeColor;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(pIndex.x, pIndex.y, 14, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Gyro Reticle around Index tip
+          if (state.showHud && !isOpenPalm) {
+            drawGyroReticle(ctx, pIndex.x, pIndex.y, `ID_${hIdx + 1}`, state.activeColor);
+          }
+        }
+
+        // Gesture D: DUAL INDEX TARGET LOCK BRACKET
+        if (indexFingertips.length >= 2 && state.showHud) {
+          playSound('lock');
+          const p1 = indexFingertips[0];
+          const p2 = indexFingertips[1];
+          drawCornerBracket(ctx, p1.x, p1.y, p2.x, p2.y, '#ffd700', 32, 2.5);
+
+          // Connecting Laser Target Line
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+          ctx.setLineDash([5, 5]);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      // Finish current drawing stroke if pinch released
+      if (!isDrawingActive && currentStroke.length > 0) {
+        drawStrokes.push([...currentStroke]);
+        currentStroke = [];
+      }
+
+      // Render Completed Air-Drawing Strokes
+      function renderStroke(pts) {
+        if (pts.length < 2) return;
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = pts[0].color;
+        ctx.shadowBlur = 15;
+        ctx.strokeStyle = pts[0].color;
+        ctx.lineWidth = 4.5;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      for (const stroke of drawStrokes) {
+        renderStroke(stroke);
+      }
+      if (currentStroke.length > 0) {
+        renderStroke(currentStroke);
+      }
+
+      // Update & Render EMP Blast Rings
+      for (let i = empWaves.length - 1; i >= 0; i--) {
+        const wave = empWaves[i];
+        wave.radius += 12;
+        wave.alpha -= 0.035;
+
+        if (wave.alpha <= 0 || wave.radius >= wave.maxRadius) {
+          empWaves.splice(i, 1);
+          continue;
+        }
+
+        ctx.save();
+        ctx.strokeStyle = `rgba(255, 0, 85, ${wave.alpha})`;
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#ff0055';
+        ctx.shadowBlur = 20;
+        ctx.beginPath();
+        ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Update & Render Flying Particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.035;
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+
+        ctx.save();
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      ctx.restore();
+    }
+
+    async function startCamera() {
+      loadingStatusText.textContent = "Connecting neural optical graph & compiling MediaPipe...";
+      
+      try {
+        if (!handsModel) {
+          initMediaPipe();
+        }
+
+        cameraInstance = new Camera(videoElement, {
+          onFrame: async () => {
+            if (state.isCameraRunning) {
+              await handsModel.send({ image: videoElement });
+            }
+          },
+          width: 1280,
+          height: 720
+        });
+
+        await cameraInstance.start();
+        state.isCameraRunning = true;
+        loadingOverlay.style.display = 'none';
+        labelToggleCam.textContent = "STOP CAMERA";
+        showToast("JARVIS OPTICAL FEED ONLINE");
+      } catch (err) {
+        console.error("Camera access failed:", err);
+        loadingStatusText.innerHTML = `
+          <span class="text-red-400 font-bold">Failed to access camera:</span> ${err.message || 'Permission denied'}.<br>
+          Please verify your browser camera permissions are enabled.
+        `;
+      }
+    }
+
+    function stopCamera() {
+      if (cameraInstance) {
+        cameraInstance.stop();
+        state.isCameraRunning = false;
+        labelToggleCam.textContent = "START CAMERA";
+        showToast("OPTICAL OFFLINE");
+      }
+    }
+
+    btnRequestCam.addEventListener('click', () => {
+      startCamera();
+      getAudioContext();
+    });
+
+    btnToggleCam.addEventListener('click', () => {
+      if (state.isCameraRunning) {
+        stopCamera();
+      } else {
+        startCamera();
+      }
+    });
+
+    btnToggleMirror.addEventListener('click', () => {
+      state.isMirrored = !state.isMirrored;
+      mirrorStatus.textContent = state.isMirrored ? 'ON' : 'OFF';
+      mirrorStatus.className = state.isMirrored ? 'text-emerald-400' : 'text-neutral-500';
+    });
+
+    btnToggleHud.addEventListener('click', () => {
+      state.showHud = !state.showHud;
+      hudStatus.textContent = state.showHud ? 'ON' : 'OFF';
+      hudStatus.className = state.showHud ? 'text-emerald-400' : 'text-neutral-500';
+    });
+
+    btnToggleAudio.addEventListener('click', () => {
+      state.audioEnabled = !state.audioEnabled;
+      audioStatus.textContent = state.audioEnabled ? 'ON' : 'OFF';
+      audioStatus.className = state.audioEnabled ? 'text-emerald-400' : 'text-neutral-500';
+      if (state.audioEnabled) getAudioContext();
+    });
+
+    btnClearCanvas.addEventListener('click', () => {
+      drawStrokes.length = 0;
+      currentStroke = [];
+      showToast('AIR CANVAS CLEARED');
+    });
+
+    btnSnapshot.addEventListener('click', () => {
+      if (!state.isCameraRunning) {
+        showToast("ERROR: CAMERA OFFLINE");
+        return;
+      }
+      const link = document.createElement('a');
+      link.download = `JARVIS_HUD_${Date.now()}.png`;
+      link.href = canvasElement.toDataURL('image/png');
+      link.click();
+      showToast("TELEMETRY CAPTURED");
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initMediaPipe();
+    });
+  </script>
+</body>
+</html>
